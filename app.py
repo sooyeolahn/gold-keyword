@@ -5,8 +5,13 @@ from datetime import datetime
 import time
 
 # --- Configuration ---
-SUPABASE_URL = "https://zhncrmrwircbhqrgkmab.supabase.co"
-SUPABASE_KEY = "sb_secret_qeEA44WqQDhc8lpVh0o7Dw_jc9uC6f9"
+# Streamlit Cloud 배포 시 secrets에서 로드, 로컬/실패 시 하드코딩 값 사용
+try:
+    SUPABASE_URL = st.secrets["supabase"]["url"]
+    SUPABASE_KEY = st.secrets["supabase"]["key"]
+except Exception:
+    SUPABASE_URL = "https://zhncrmrwircbhqrgkmab.supabase.co"
+    SUPABASE_KEY = "sb_secret_qeEA44WqQDhc8lpVh0o7Dw_jc9uC6f9"
 
 # --- Page Setup ---
 st.set_page_config(
