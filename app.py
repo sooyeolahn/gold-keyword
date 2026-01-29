@@ -187,24 +187,46 @@ st.markdown("""
 def init_supabase():
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
-def fetch_data(supabase, limit=200, search_query=""):
+def fetch_data(supabase, page=1, page_size=50, search_query="", sort_options=None):
     try:
-        # Fetch data first (sorting will be done in Python for complex multi-sort)
-        query = supabase.table("keywords").select("*")
+        # 쿼리 시작 (전체 카운트 포함)
+        query = supabase.table("keywords").select("*", count="exact")
         
+        # 검색어 필터
         if search_query:
             query = query.ilike("keyword", f"%{search_query}%")
             
-        # 기본적으로 최신순으로 가져오되, 파이썬에서 정렬하기 위해 넉넉하게 가져옴
-        response = query.order("created_at", desc=True).limit(limit).execute()
-        return pd.DataFrame(response.data)
+        # 정렬 적용 (DB 레벨)
+        # sort_options 예: [('competition_rate', True), ('total_search_volume', False)] 
+        # (True: 오름차순/낮은순, False: 내림차순/높은순)
+        if sort_options:
+            for col, ascending in sort_options:
+                query = query.order(col, desc=not ascending)
+        else:
+            # 기본 정렬: 최신순
+            query = query.order("created_at", desc=True)
+            
+        # 페이징 적용 (0-based index)
+        start = (page - 1) * page_size
+        end = start + page_size - 1
+        query = query.range(start, end)
+        
+        response = query.execute()
+        return pd.DataFrame(response.data), response.count
     except Exception as e:
         st.error(f"데이터를 불러오는 중 오류가 발생했습니다: {e}")
-        return pd.DataFrame()
+        return pd.DataFrame(), 0
 
 # --- Main App Logic ---
 def main():
     supabase = init_supabase()
+    
+    # Session State for Pagination
+    if 'current_page' not in st.session_state:
+        st.session_state.current_page = 1
+        
+    def reset_page():
+        st.session_state.current_page = 1
     
     # Header
     st.markdown("""
@@ -224,11 +246,16 @@ def main():
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        search_query = st.text_input("", placeholder="분석하고 싶은 주제를 입력하세요 (예: 제주도, 아이폰16)", label_visibility="collapsed")
+        search_query = st.text_input(
+            "", 
+            placeholder="분석하고 싶은 주제를 입력하세요 (예: 제주도, 아이폰16)", 
+            label_visibility="collapsed",
+            on_change=reset_page
+        )
         
     with col2:
         # Multi-select for flexible sorting
-        sort_options = [
+        sort_options_ui = [
             "경쟁률 (낮은순)", 
             "경쟁률 (높은순)", 
             "조회수 (높은순)", 
@@ -238,10 +265,11 @@ def main():
         ]
         selected_sorts = st.multiselect(
             "정렬 기준 (선택한 순서대로 적용됩니다)",
-            options=sort_options,
+            options=sort_options_ui,
             default=["경쟁률 (낮은순)", "조회수 (높은순)"],
             label_visibility="collapsed",
-            placeholder="정렬 기준 선택 (여러 개 가능)"
+            placeholder="정렬 기준 선택 (여러 개 가능)",
+            on_change=reset_page
         )
 
     # Category Filters (Visual Only)
@@ -253,42 +281,44 @@ def main():
     """, unsafe_allow_html=True)
     
     # Data Processing
-    with st.spinner("데이터 분석 중..."):
-        df = fetch_data(supabase, limit=500, search_query=search_query)
-        
-        if not df.empty and selected_sorts:
-            # Apply Sorting based on user selection
-            sort_columns = []
-            ascending_flags = []
-            
-            for sort_opt in selected_sorts:
-                if "경쟁률" in sort_opt:
-                    sort_columns.append("competition_rate")
-                    ascending_flags.append("낮은순" in sort_opt)
-                elif "조회수" in sort_opt:
-                    sort_columns.append("total_search_volume")
-                    ascending_flags.append("낮은순" in sort_opt)
-                elif "발행수" in sort_opt:
-                    sort_columns.append("document_count")
-                    ascending_flags.append("낮은순" in sort_opt)
-            
-            if sort_columns:
-                df = df.sort_values(by=sort_columns, ascending=ascending_flags)
+    page_size = 50
     
-    # Results Header
+    # 정렬 옵션 파싱
+    db_sort_options = []
+    if selected_sorts:
+        for sort_opt in selected_sorts:
+            if "경쟁률" in sort_opt:
+                db_sort_options.append(("competition_rate", "낮은순" in sort_opt))
+            elif "조회수" in sort_opt:
+                db_sort_options.append(("total_search_volume", "낮은순" in sort_opt))
+            elif "발행수" in sort_opt:
+                db_sort_options.append(("document_count", "낮은순" in sort_opt))
+    
+    with st.spinner("데이터 분석 중..."):
+        df, total_count = fetch_data(
+            supabase, 
+            page=st.session_state.current_page, 
+            page_size=page_size, 
+            search_query=search_query,
+            sort_options=db_sort_options
+        )
+    
+    # Results Header & Pagination Info
     if not df.empty:
+        total_pages = (total_count + page_size - 1) // page_size
+        
         st.markdown(f"""
         <div style="text-align: center; color: #888; font-size: 0.8em; margin-bottom: 20px; letter-spacing: 1px;">
-            SMART SORT APPLIED
+            SMART SORT APPLIED (DB)
         </div>
-        <div style="display: flex; justify-content: flex-end; margin-bottom: 10px; color: #666; font-size: 0.9em;">
-            ANALYZED ITEMS <strong style="margin-left: 5px; color: #ffca28;">{len(df)} Keywords</strong>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; color: #666; font-size: 0.9em;">
+            <div>Page <strong>{st.session_state.current_page}</strong> / {total_pages}</div>
+            <div>TOTAL <strong style="margin-left: 5px; color: #ffca28;">{total_count} Keywords</strong></div>
         </div>
         """, unsafe_allow_html=True)
         
-        # List Items (Pagination could be added here, but keeping it simple for now)
-        display_limit = 50
-        for _, row in df.head(display_limit).iterrows():
+        # List Items
+        for _, row in df.iterrows():
             # Format numbers
             total_search_val = row.get('total_search_volume', 0)
             pc_search_val = row.get('pc_search_volume', 0)
@@ -347,16 +377,16 @@ def main():
                 </div>
                 <div class="metrics-section">
                     <div class="metric">
-                        <div class="metric-label">월간 조회</div>
-                        <div class="metric-value">{total_search}</div>
-                    </div>
-                    <div class="metric">
                         <div class="metric-label">PC</div>
                         <div class="metric-value" style="font-size: 0.9em; color: #666;">{pc_search}</div>
                     </div>
                     <div class="metric">
                         <div class="metric-label">모바일</div>
                         <div class="metric-value" style="font-size: 0.9em; color: #666;">{mobile_search}</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">월간 조회</div>
+                        <div class="metric-value">{total_search}</div>
                     </div>
                     <div class="metric">
                         <div class="metric-label">월간 발행</div>
@@ -369,6 +399,20 @@ def main():
                 </div>
             </div>
             """, unsafe_allow_html=True)
+            
+        # Pagination Buttons
+        col_prev, col_page, col_next = st.columns([1, 2, 1])
+        with col_prev:
+            if st.session_state.current_page > 1:
+                if st.button("⬅️ 이전 페이지", use_container_width=True):
+                    st.session_state.current_page -= 1
+                    st.rerun()
+        
+        with col_next:
+            if st.session_state.current_page < total_pages:
+                if st.button("다음 페이지 ➡️", use_container_width=True):
+                    st.session_state.current_page += 1
+                    st.rerun()
             
     else:
         st.info("데이터가 없습니다. 수집을 시작하거나 검색어를 변경해보세요.")
