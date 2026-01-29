@@ -187,29 +187,41 @@ st.markdown("""
         background-color: transparent;
     }
     [data-testid="stCode"] > div {
-        background-color: transparent !important;
+        background-color: #f8f9fa !important; /* Light background for code block */
+        border-radius: 8px;
     }
     [data-testid="stCode"] pre {
-        background-color: transparent !important;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol" !important;
-        font-size: 1.2rem !important;
+        font-size: 1.1rem !important;
         font-weight: 700 !important;
         color: #1a1a1a !important;
-        padding: 0 !important;
     }
     [data-testid="stCopyButton"] {
-        background-color: transparent;
         color: #888;
-        border: none;
     }
     [data-testid="stCopyButton"]:hover {
         color: #f57f17;
-        background-color: #fff8e1;
     }
     
-    /* Native Container Styling Hack */
-    [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] > [data-testid="stVerticalBlock"] {
-        /* This targets containers inside columns if needed, but keeping it simple for now */
+    /* Card Styling using Native Container */
+    [data-testid="stVerticalBlockBorderWrapper"] {
+        background-color: white;
+        border-radius: 16px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+        border: 1px solid white;
+        padding: 15px;
+        transition: transform 0.2s;
+        margin-bottom: 10px;
+    }
+    [data-testid="stVerticalBlockBorderWrapper"]:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(0,0,0,0.08);
+        border-color: #f0f2f5;
+    }
+    
+    /* Remove default border of st.container(border=True) if possible, or override it above */
+    [data-testid="stVerticalBlockBorderWrapper"] > div {
+        /* Inner content adjustment */
     }
 </style>
 """, unsafe_allow_html=True)
