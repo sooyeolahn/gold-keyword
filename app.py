@@ -179,6 +179,38 @@ st.markdown("""
         border-radius: 12px;
         border: 1px solid #ddd;
     }
+
+    /* Copy Button & Code Block Styling */
+    [data-testid="stCode"] {
+        border: none;
+        padding: 0;
+        background-color: transparent;
+    }
+    [data-testid="stCode"] > div {
+        background-color: transparent !important;
+    }
+    [data-testid="stCode"] pre {
+        background-color: transparent !important;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol" !important;
+        font-size: 1.2rem !important;
+        font-weight: 700 !important;
+        color: #1a1a1a !important;
+        padding: 0 !important;
+    }
+    [data-testid="stCopyButton"] {
+        background-color: transparent;
+        color: #888;
+        border: none;
+    }
+    [data-testid="stCopyButton"]:hover {
+        color: #f57f17;
+        background-color: #fff8e1;
+    }
+    
+    /* Native Container Styling Hack */
+    [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] > [data-testid="stVerticalBlock"] {
+        /* This targets containers inside columns if needed, but keeping it simple for now */
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -365,40 +397,48 @@ def main():
                 badge_color = "#ffebee" # Red
                 badge_text_color = "#c62828"
                 
-            # Render Card
-            st.markdown(f"""
-            <div class="card">
-                <div class="keyword-section">
-                    <div class="meta-info">
-                        <span class="badge" style="background-color: {badge_color}; color: {badge_text_color};">{badge_text}</span>
-                        <span>{date_str}</span>
+            # Render Card (Native Streamlit with st.code for copy button)
+            with st.container(border=True):
+                c_left, c_right = st.columns([1.5, 2.5])
+                
+                with c_left:
+                    # Meta info (Badge & Date)
+                    st.markdown(f"""
+                    <div style="display:flex; gap:8px; align-items:center; margin-bottom:0px;">
+                        <span style="background-color: {badge_color}; color: {badge_text_color}; padding: 2px 8px; border-radius: 6px; font-weight: 600; font-size: 0.85em;">{badge_text}</span>
+                        <span style="font-size:0.75em; color:#888;">{date_str}</span>
                     </div>
-                    <div class="keyword-title">{row['keyword']}</div>
-                </div>
-                <div class="metrics-section">
-                    <div class="metric">
-                        <div class="metric-label">PC</div>
-                        <div class="metric-value" style="font-size: 0.9em; color: #666;">{pc_search}</div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Keyword with Copy Button (Using styled st.code)
+                    st.code(row['keyword'], language="text")
+                
+                with c_right:
+                    # Metrics (HTML for layout control)
+                    st.markdown(f"""
+                    <div style="display:flex; justify-content:space-between; align-items:center; height:100%; padding-top:10px;">
+                        <div style="text-align:center; min-width:60px;">
+                            <div style="font-size:0.7em; color:#888; margin-bottom:4px;">PC</div>
+                            <div style="font-size:0.9em; font-weight:500; color:#666;">{pc_search}</div>
+                        </div>
+                        <div style="text-align:center; min-width:60px;">
+                            <div style="font-size:0.7em; color:#888; margin-bottom:4px;">모바일</div>
+                            <div style="font-size:0.9em; font-weight:500; color:#666;">{mobile_search}</div>
+                        </div>
+                        <div style="text-align:center; min-width:60px;">
+                            <div style="font-size:0.7em; color:#888; margin-bottom:4px;">월간 조회</div>
+                            <div style="font-size:1.0em; font-weight:700; color:#333;">{total_search}</div>
+                        </div>
+                        <div style="text-align:center; min-width:60px;">
+                            <div style="font-size:0.7em; color:#888; margin-bottom:4px;">월간 발행</div>
+                            <div style="font-size:1.0em; font-weight:700; color:#333;">{doc_count}</div>
+                        </div>
+                        <div style="text-align:center; min-width:60px;">
+                            <div style="font-size:0.7em; color:#888; margin-bottom:4px;">경쟁률</div>
+                            <div style="font-size:1.0em; font-weight:700; color:#f57f17;">{comp_rate_str}</div>
+                        </div>
                     </div>
-                    <div class="metric">
-                        <div class="metric-label">모바일</div>
-                        <div class="metric-value" style="font-size: 0.9em; color: #666;">{mobile_search}</div>
-                    </div>
-                    <div class="metric">
-                        <div class="metric-label">월간 조회</div>
-                        <div class="metric-value">{total_search}</div>
-                    </div>
-                    <div class="metric">
-                        <div class="metric-label">월간 발행</div>
-                        <div class="metric-value">{doc_count}</div>
-                    </div>
-                    <div class="metric">
-                        <div class="metric-label">경쟁률</div>
-                        <div class="metric-value" style="color: #f57f17;">{comp_rate_str}</div>
-                    </div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+                    """, unsafe_allow_html=True)
             
         # Pagination Buttons
         col_prev, col_page, col_next = st.columns([1, 2, 1])
