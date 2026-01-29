@@ -1,0 +1,372 @@
+import streamlit as st
+import pandas as pd
+from supabase import create_client, Client
+from datetime import datetime
+import time
+
+# --- Configuration ---
+SUPABASE_URL = "https://zhncrmrwircbhqrgkmab.supabase.co"
+SUPABASE_KEY = "sb_secret_qeEA44WqQDhc8lpVh0o7Dw_jc9uC6f9"
+
+# --- Page Setup ---
+st.set_page_config(
+    page_title="꿀키워드",
+    page_icon="🍯",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
+# --- CSS Styling ---
+st.markdown("""
+<style>
+    /* Global Styles */
+    [data-testid="stAppViewContainer"] {
+        background-color: #f0f2f5; /* Light Gray Background */
+    }
+    .main {
+        background-color: #f0f2f5;
+    }
+    
+    /* Search Bar Styling (Pill Shape) */
+    .stTextInput > div > div > input {
+        border-radius: 50px; /* Fully rounded */
+        padding: 12px 25px;
+        border: 2px solid #222; /* Darker border as requested */
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        color: #333;
+        background-color: white;
+        font-size: 1.0em;
+    }
+    
+    /* Category Filters */
+    .filter-container {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+    .filter-btn {
+        background-color: white;
+        border: 1px solid #ddd;
+        border-radius: 20px;
+        padding: 6px 18px;
+        font-size: 0.9em;
+        color: #555;
+        cursor: pointer;
+        transition: all 0.2s;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+    .filter-btn.active {
+        background-color: #ff4b4b;
+        color: white;
+        border-color: #ff4b4b;
+    }
+    
+    /* Card Styling */
+    .card {
+        background-color: white;
+        border-radius: 16px;
+        padding: 15px 25px;
+        margin-bottom: 12px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+        border: 1px solid white;
+        transition: transform 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(0,0,0,0.08);
+    }
+    
+    .keyword-section {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        flex: 1.2;
+    }
+    
+    .meta-info {
+        display: flex;
+        gap: 8px;
+        font-size: 0.75em;
+        color: #888;
+        align-items: center;
+    }
+    
+    .badge {
+        background-color: #e3f2fd;
+        color: #1976d2;
+        padding: 2px 8px;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 0.85em;
+    }
+    
+    .keyword-title {
+        font-size: 1.1em;
+        font-weight: 700;
+        color: #1a1a1a;
+    }
+    
+    .metrics-section {
+        display: flex;
+        gap: 20px;
+        align-items: center;
+        flex: 2;
+        justify-content: flex-end;
+    }
+    
+    .metric {
+        text-align: center;
+        min-width: 70px;
+    }
+    
+    .metric-label {
+        font-size: 0.7em;
+        color: #888;
+        margin-bottom: 4px;
+    }
+    
+    .metric-value {
+        font-size: 1.0em;
+        font-weight: 700;
+        color: #333;
+    }
+    
+    /* Header Styling */
+    .header-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 30px;
+        padding: 10px 10px;
+    }
+    
+    .app-title {
+        font-size: 2.0em;
+        font-weight: 900;
+        color: #222;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        letter-spacing: -0.5px;
+    }
+    
+    .logo-icon {
+        background-color: #ffca28; /* Honey Color */
+        color: white;
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.4em;
+        box-shadow: 0 4px 6px rgba(255, 202, 40, 0.3);
+    }
+    
+    /* Custom Multiselect Styling */
+    .stMultiSelect > div > div {
+        background-color: white;
+        border-radius: 12px;
+        border: 1px solid #ddd;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# --- Helper Functions ---
+@st.cache_resource
+def init_supabase():
+    return create_client(SUPABASE_URL, SUPABASE_KEY)
+
+def fetch_data(supabase, limit=200, search_query=""):
+    try:
+        # Fetch data first (sorting will be done in Python for complex multi-sort)
+        query = supabase.table("keywords").select("*")
+        
+        if search_query:
+            query = query.ilike("keyword", f"%{search_query}%")
+            
+        # 기본적으로 최신순으로 가져오되, 파이썬에서 정렬하기 위해 넉넉하게 가져옴
+        response = query.order("created_at", desc=True).limit(limit).execute()
+        return pd.DataFrame(response.data)
+    except Exception as e:
+        st.error(f"데이터를 불러오는 중 오류가 발생했습니다: {e}")
+        return pd.DataFrame()
+
+# --- Main App Logic ---
+def main():
+    supabase = init_supabase()
+    
+    # Header
+    st.markdown("""
+    <div class="header-container">
+        <div class="app-title">
+            <div class="logo-icon">🍯</div>
+            꿀키워드
+        </div>
+        <div>
+            <span style="color: #666; font-size: 0.9em; font-weight: 500;">스마트한 키워드 발굴 도구</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Search & Sort Area
+    # Using columns to arrange search and sort
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        search_query = st.text_input("", placeholder="분석하고 싶은 주제를 입력하세요 (예: 제주도, 아이폰16)", label_visibility="collapsed")
+        
+    with col2:
+        # Multi-select for flexible sorting
+        sort_options = [
+            "경쟁률 (낮은순)", 
+            "경쟁률 (높은순)", 
+            "조회수 (높은순)", 
+            "조회수 (낮은순)",
+            "발행수 (높은순)", 
+            "발행수 (낮은순)"
+        ]
+        selected_sorts = st.multiselect(
+            "정렬 기준 (선택한 순서대로 적용됩니다)",
+            options=sort_options,
+            default=["경쟁률 (낮은순)", "조회수 (높은순)"],
+            label_visibility="collapsed",
+            placeholder="정렬 기준 선택 (여러 개 가능)"
+        )
+
+    # Category Filters (Visual Only)
+    categories = ["전체", "영화", "게임", "드라마", "공연·전시", "스타·연예인", "방송", "일상·생각", "문화·책", "육아·결혼", "반려동물"]
+    st.markdown(f"""
+    <div class="filter-container">
+        {''.join([f'<div class="filter-btn {"active" if c == "전체" else ""}">{c}</div>' for c in categories])}
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Data Processing
+    with st.spinner("데이터 분석 중..."):
+        df = fetch_data(supabase, limit=500, search_query=search_query)
+        
+        if not df.empty and selected_sorts:
+            # Apply Sorting based on user selection
+            sort_columns = []
+            ascending_flags = []
+            
+            for sort_opt in selected_sorts:
+                if "경쟁률" in sort_opt:
+                    sort_columns.append("competition_rate")
+                    ascending_flags.append("낮은순" in sort_opt)
+                elif "조회수" in sort_opt:
+                    sort_columns.append("total_search_volume")
+                    ascending_flags.append("낮은순" in sort_opt)
+                elif "발행수" in sort_opt:
+                    sort_columns.append("document_count")
+                    ascending_flags.append("낮은순" in sort_opt)
+            
+            if sort_columns:
+                df = df.sort_values(by=sort_columns, ascending=ascending_flags)
+    
+    # Results Header
+    if not df.empty:
+        st.markdown(f"""
+        <div style="text-align: center; color: #888; font-size: 0.8em; margin-bottom: 20px; letter-spacing: 1px;">
+            SMART SORT APPLIED
+        </div>
+        <div style="display: flex; justify-content: flex-end; margin-bottom: 10px; color: #666; font-size: 0.9em;">
+            ANALYZED ITEMS <strong style="margin-left: 5px; color: #ffca28;">{len(df)} Keywords</strong>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # List Items (Pagination could be added here, but keeping it simple for now)
+        display_limit = 50
+        for _, row in df.head(display_limit).iterrows():
+            # Format numbers
+            total_search_val = row.get('total_search_volume', 0)
+            pc_search_val = row.get('pc_search_volume', 0)
+            mobile_search_val = row.get('mobile_search_volume', 0)
+            
+            # Handle None
+            total_search_val = total_search_val if total_search_val is not None else 0
+            pc_search_val = pc_search_val if pc_search_val is not None else 0
+            mobile_search_val = mobile_search_val if mobile_search_val is not None else 0
+            
+            total_search = f"{total_search_val:,}"
+            pc_search = f"{pc_search_val:,}"
+            mobile_search = f"{mobile_search_val:,}"
+            
+            doc_count_val = row.get('document_count', 0)
+            doc_count_val = doc_count_val if doc_count_val is not None else 0
+            doc_count = f"{doc_count_val:,}"
+            
+            comp_rate = row.get('competition_rate', 0)
+            comp_rate_str = f"{comp_rate:.2f}" if comp_rate is not None else "-"
+            
+            # Date formatting
+            created_at = row.get('created_at', '')
+            if created_at:
+                try:
+                    date_obj = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                    date_str = date_obj.strftime('%Y.%m.%d %H:%M')
+                except:
+                    date_str = created_at
+            else:
+                date_str = "-"
+                
+            # Determine badge
+            badge_text = "일반"
+            badge_color = "#e3f2fd" # Blue
+            badge_text_color = "#1976d2"
+            
+            if comp_rate is not None and comp_rate < 0.5:
+                badge_text = "🍯 꿀키워드"
+                badge_color = "#fff8e1" # Honey Light
+                badge_text_color = "#f57f17"
+            elif total_search_val > 100000:
+                badge_text = "🔥 인기"
+                badge_color = "#ffebee" # Red
+                badge_text_color = "#c62828"
+                
+            # Render Card
+            st.markdown(f"""
+            <div class="card">
+                <div class="keyword-section">
+                    <div class="meta-info">
+                        <span class="badge" style="background-color: {badge_color}; color: {badge_text_color};">{badge_text}</span>
+                        <span>{date_str}</span>
+                    </div>
+                    <div class="keyword-title">{row['keyword']}</div>
+                </div>
+                <div class="metrics-section">
+                    <div class="metric">
+                        <div class="metric-label">월간 조회</div>
+                        <div class="metric-value">{total_search}</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">PC</div>
+                        <div class="metric-value" style="font-size: 0.9em; color: #666;">{pc_search}</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">모바일</div>
+                        <div class="metric-value" style="font-size: 0.9em; color: #666;">{mobile_search}</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">월간 발행</div>
+                        <div class="metric-value">{doc_count}</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">경쟁률</div>
+                        <div class="metric-value" style="color: #f57f17;">{comp_rate_str}</div>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+    else:
+        st.info("데이터가 없습니다. 수집을 시작하거나 검색어를 변경해보세요.")
+
+if __name__ == "__main__":
+    main()

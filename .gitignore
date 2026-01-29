@@ -1,0 +1,20 @@
+# Streamlit secrets
+.streamlit/secrets.toml
+
+# Google Cloud Service Account Key
+service-account.json
+
+# Excel files (local data)
+*.xlsx
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Mac OS system file
+.DS_Store
+
+# Virtual Environment
+venv/
+env/
+.env
