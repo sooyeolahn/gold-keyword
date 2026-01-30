@@ -1,10 +1,15 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 from supabase import create_client, Client
-from datetime import datetime
-import time
+import datetime
+from datetime import timedelta, datetime
+import math
+import textwrap
+import json
 
-# --- Configuration ---
+# -----------------------------------------------------------------------------
+# 1. Configuration & Setup
 # Streamlit Cloud 배포 시 secrets에서 로드, 로컬/실패 시 하드코딩 값 사용
 try:
     SUPABASE_URL = st.secrets["supabase"]["url"]
@@ -34,9 +39,9 @@ st.markdown("""
     
     /* Search Bar Styling (Pill Shape) */
     .stTextInput > div > div > input {
-        border-radius: 50px; /* Fully rounded */
+        border-radius: 50px;
         padding: 12px 25px;
-        border: 2px solid #222; /* Darker border as requested */
+        border: 2px solid #222;
         box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         color: #333;
         background-color: white;
@@ -68,7 +73,7 @@ st.markdown("""
         border-color: #ff4b4b;
     }
     
-    /* Card Styling */
+    /* Card Styling (HTML) */
     .card {
         background-color: white;
         border-radius: 16px;
@@ -108,12 +113,6 @@ st.markdown("""
         border-radius: 6px;
         font-weight: 600;
         font-size: 0.85em;
-    }
-    
-    .keyword-title {
-        font-size: 1.1em;
-        font-weight: 700;
-        color: #1a1a1a;
     }
     
     .metrics-section {
@@ -173,13 +172,120 @@ st.markdown("""
         box-shadow: 0 4px 6px rgba(255, 202, 40, 0.3);
     }
     
-    /* Custom Multiselect Styling */
-    .stMultiSelect > div > div {
-        background-color: white;
-        border-radius: 12px;
-        border: 1px solid #ddd;
+    /* Copy Button Styles */
+    .keyword-wrapper {
+        display: inline-flex !important;
+        align-items: center !important;
+        cursor: pointer;
+        user-select: none; /* Prevent text selection on double click */
+        transition: opacity 0.1s;
     }
+    .keyword-wrapper:active {
+        opacity: 0.7;
+    }
+    
+    .keyword-wrapper:hover .copy-icon {
+        opacity: 1 !important;
+    }
+    
+    /* On mobile/touch devices where hover isn't primary, show icon */
+    @media (hover: none) {
+        .copy-icon {
+            opacity: 1 !important;
+            color: #ccc;
+        }
+    }
+    
+    .copy-icon {
+        font-size: 1rem;
+        color: #bbb;
+        margin-left: 8px;
+        opacity: 0;
+        transition: opacity 0.2s ease-in-out;
+    }
+
 </style>
+
+<!-- Global Script for Copy Functionality -->
+<script>
+(function() {
+    console.log("Copy Script Loaded");
+    
+    // Unique function name to avoid conflicts
+    var fnName = "goldKeywordCopy";
+    
+    var copyFn = function(text, iconId) {
+        console.log("Copy Triggered:", text);
+        var icon = document.getElementById(iconId);
+        
+        function showSuccess() {
+            if (icon) {
+                var originalContent = icon.innerHTML;
+                icon.innerHTML = '✅';
+                icon.style.opacity = '1';
+                setTimeout(function() { 
+                    icon.innerHTML = originalContent; 
+                    icon.style.opacity = ''; 
+                }, 2000);
+            }
+        }
+
+        function showFail(err) {
+            console.error("Copy failed:", err);
+            alert("복사 실패: " + err + "\n\n브라우저 보안 설정이나 환경 문제일 수 있습니다.");
+        }
+
+        // 1. Try modern Clipboard API
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(showSuccess).catch(function(err) {
+                console.warn('Clipboard API failed, trying fallback', err);
+                fallbackCopy(text);
+            });
+        } else {
+            fallbackCopy(text);
+        }
+
+        // 2. Fallback for older browsers / insecure context
+        function fallbackCopy(text) {
+            try {
+                var textArea = document.createElement("textarea");
+                textArea.value = text;
+                
+                // Make it invisible but part of DOM
+                textArea.style.position = "fixed";
+                textArea.style.left = "0";
+                textArea.style.top = "0";
+                textArea.style.opacity = "0";
+                
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                
+                var successful = document.execCommand('copy');
+                document.body.removeChild(textArea);
+                
+                if (successful) {
+                    showSuccess();
+                } else {
+                    showFail("execCommand returned false");
+                }
+            } catch (err) {
+                showFail(err);
+            }
+        }
+    };
+    
+    // Attach to window
+    window[fnName] = copyFn;
+    
+    // Attach to parent window just in case (for Streamlit Cloud/iframe)
+    try {
+        if (window.parent) {
+            window.parent[fnName] = copyFn;
+        }
+    } catch(e) { console.log("Parent access denied"); }
+})();
+</script>
 """, unsafe_allow_html=True)
 
 # --- Helper Functions ---
@@ -197,8 +303,6 @@ def fetch_data(supabase, page=1, page_size=50, search_query="", sort_options=Non
             query = query.ilike("keyword", f"%{search_query}%")
             
         # 정렬 적용 (DB 레벨)
-        # sort_options 예: [('competition_rate', True), ('total_search_volume', False)] 
-        # (True: 오름차순/낮은순, False: 내림차순/높은순)
         if sort_options:
             for col, ascending in sort_options:
                 query = query.order(col, desc=not ascending)
@@ -229,7 +333,7 @@ def main():
         st.session_state.current_page = 1
     
     # Header
-    st.markdown("""
+    st.markdown(textwrap.dedent("""
     <div class="header-container">
         <div class="app-title">
             <div class="logo-icon">🍯</div>
@@ -239,10 +343,9 @@ def main():
             <span style="color: #666; font-size: 0.9em; font-weight: 500;">스마트한 키워드 발굴 도구</span>
         </div>
     </div>
-    """, unsafe_allow_html=True)
+    """), unsafe_allow_html=True)
     
     # Search & Sort Area
-    # Using columns to arrange search and sort
     col1, col2 = st.columns([2, 1])
     
     with col1:
@@ -307,7 +410,7 @@ def main():
     if not df.empty:
         total_pages = (total_count + page_size - 1) // page_size
         
-        st.markdown(f"""
+        st.markdown(textwrap.dedent(f"""
         <div style="text-align: center; color: #888; font-size: 0.8em; margin-bottom: 20px; letter-spacing: 1px;">
             SMART SORT APPLIED (DB)
         </div>
@@ -315,90 +418,342 @@ def main():
             <div>Page <strong>{st.session_state.current_page}</strong> / {total_pages}</div>
             <div>TOTAL <strong style="margin-left: 5px; color: #ffca28;">{total_count} Keywords</strong></div>
         </div>
-        """, unsafe_allow_html=True)
+        """), unsafe_allow_html=True)
         
-        # List Items
-        for _, row in df.iterrows():
-            # Format numbers
-            total_search_val = row.get('total_search_volume', 0)
+        # -----------------------------------------------------------
+        # NEW: Unified Component Rendering (Replacing Loop)
+        # -----------------------------------------------------------
+        
+        # Helper: Format numbers
+        def fmt(val):
+            return f"{val:,}" if val is not None else "0"
+            
+        def fmt_comp(val):
+            return f"{val:.2f}" if val is not None else "-"
+
+        # Prepare Data for Component
+        component_data = []
+        for i, (_, row) in enumerate(df.iterrows()):
+            # Metric Logic
             pc_search_val = row.get('pc_search_volume', 0)
+            if pc_search_val is None: pc_search_val = 0
+            
             mobile_search_val = row.get('mobile_search_volume', 0)
+            if mobile_search_val is None: mobile_search_val = 0
             
-            # Handle None
-            total_search_val = total_search_val if total_search_val is not None else 0
-            pc_search_val = pc_search_val if pc_search_val is not None else 0
-            mobile_search_val = mobile_search_val if mobile_search_val is not None else 0
-            
-            total_search = f"{total_search_val:,}"
-            pc_search = f"{pc_search_val:,}"
-            mobile_search = f"{mobile_search_val:,}"
+            total_search_val = row.get('total_search_volume', 0)
+            if total_search_val is None: total_search_val = pc_search_val + mobile_search_val
             
             doc_count_val = row.get('document_count', 0)
-            doc_count_val = doc_count_val if doc_count_val is not None else 0
-            doc_count = f"{doc_count_val:,}"
+            if doc_count_val is None: doc_count_val = 0
             
-            comp_rate = row.get('competition_rate', 0)
-            comp_rate_str = f"{comp_rate:.2f}" if comp_rate is not None else "-"
+            comp_rate_val = row.get('competition_rate', 0)
             
-            # Date formatting
-            created_at = row.get('created_at', '')
-            if created_at:
-                try:
-                    date_obj = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
-                    date_str = date_obj.strftime('%Y.%m.%d %H:%M')
-                except:
-                    date_str = created_at
-            else:
-                date_str = "-"
-                
-            # Determine badge
+            # Badge Logic
             badge_text = "일반"
-            badge_color = "#e3f2fd" # Blue
+            badge_color = "#e3f2fd"
             badge_text_color = "#1976d2"
             
-            if comp_rate is not None and comp_rate < 0.5:
+            if comp_rate_val is not None and comp_rate_val < 0.5:
                 badge_text = "🍯 꿀키워드"
-                badge_color = "#fff8e1" # Honey Light
+                badge_color = "#fff8e1"
                 badge_text_color = "#f57f17"
             elif total_search_val > 100000:
                 badge_text = "🔥 인기"
-                badge_color = "#ffebee" # Red
+                badge_color = "#ffebee"
                 badge_text_color = "#c62828"
+
+            # Date Logic
+            created_at = row.get('created_at', '')
+            date_str = "-"
+            if created_at:
+                try:
+                    date_obj = datetime.fromisoformat(str(created_at).replace('Z', '+00:00'))
+                    date_str = date_obj.strftime('%Y.%m.%d')
+                except:
+                    date_str = str(created_at)[:10]
+
+            component_data.append({
+                "keyword": row['keyword'],
+                "badge": {"text": badge_text, "bg": badge_color, "color": badge_text_color},
+                "date": date_str,
+                "metrics": {
+                    "pc": fmt(pc_search_val),
+                    "mobile": fmt(mobile_search_val),
+                    "total": fmt(total_search_val),
+                    "docs": fmt(doc_count_val),
+                    "comp": fmt_comp(comp_rate_val)
+                }
+            })
+            
+        # Serialize Data
+        import json
+        data_json = json.dumps(component_data, ensure_ascii=False)
+        
+        # Component HTML Template
+        component_html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <style>
+                @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+                body {{
+                    font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+                    margin: 0;
+                    padding: 4px;
+                    background-color: transparent;
+                }}
+                .card {{
+                    background: white;
+                    border-radius: 12px;
+                    padding: 20px 24px;
+                    margin-bottom: 12px;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                    border: 1px solid #eee;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                }}
                 
-            # Render Card
-            st.markdown(f"""
-            <div class="card">
-                <div class="keyword-section">
-                    <div class="meta-info">
-                        <span class="badge" style="background-color: {badge_color}; color: {badge_text_color};">{badge_text}</span>
-                        <span>{date_str}</span>
-                    </div>
-                    <div class="keyword-title">{row['keyword']}</div>
-                </div>
-                <div class="metrics-section">
-                    <div class="metric">
-                        <div class="metric-label">PC</div>
-                        <div class="metric-value" style="font-size: 0.9em; color: #666;">{pc_search}</div>
-                    </div>
-                    <div class="metric">
-                        <div class="metric-label">모바일</div>
-                        <div class="metric-value" style="font-size: 0.9em; color: #666;">{mobile_search}</div>
-                    </div>
-                    <div class="metric">
-                        <div class="metric-label">월간 조회</div>
-                        <div class="metric-value">{total_search}</div>
-                    </div>
-                    <div class="metric">
-                        <div class="metric-label">월간 발행</div>
-                        <div class="metric-value">{doc_count}</div>
-                    </div>
-                    <div class="metric">
-                        <div class="metric-label">경쟁률</div>
-                        <div class="metric-value" style="color: #f57f17;">{comp_rate_str}</div>
-                    </div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+                /* Left Section: Badge, Date, Keyword */
+                .left-section {{
+                    display: flex;
+                    flex-direction: column;
+                    gap: 8px;
+                    min-width: 0; /* Prevent flex overflow */
+                }}
+                
+                .meta-row {{
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                }}
+                
+                .badge {{
+                    padding: 3px 6px;
+                    border-radius: 4px;
+                    font-size: 11px;
+                    font-weight: 600;
+                    line-height: 1;
+                }}
+                
+                .date {{
+                    font-size: 12px;
+                    color: #999;
+                }}
+                
+                .keyword-row {{
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    cursor: pointer;
+                    user-select: none;
+                }}
+                .keyword-row:active {{ opacity: 0.7; }}
+                
+                .keyword {{
+                    font-size: 18px;
+                    font-weight: 700;
+                    color: #222;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }}
+                
+                .copy-btn {{
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 8px;
+                    background-color: transparent;
+                    color: #9aa0a6; /* Neutral Gray Icon */
+                    border: none;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    margin-left: 6px;
+                    padding: 0;
+                }}
+                
+                .keyword-row:hover .copy-btn {{
+                    background-color: #f1f3f4; /* Hover: Light Gray BG */
+                    color: #5f6368; /* Hover: Darker Gray Icon */
+                    opacity: 1;
+                }}
+                
+                .copy-btn.success {{
+                    background-color: #e6f4ea !important; /* Success: Light Green BG */
+                    color: #1e8e3e !important; /* Success: Green Icon */
+                    opacity: 1 !important;
+                }}
+                
+                .copy-btn svg {{
+                    width: 18px;
+                    height: 18px;
+                    fill: none;
+                    stroke: currentColor;
+                    stroke-width: 2;
+                    stroke-linecap: round;
+                    stroke-linejoin: round;
+                }}
+                
+                /* Right Section: Metrics */
+                .metrics-grid {{
+                    display: flex;
+                    gap: 32px;
+                    align-items: center;
+                }}
+                
+                .metric {{
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center; /* Center align labels and values */
+                    min-width: 60px;
+                }}
+                
+                .metric-label {{
+                    font-size: 11px;
+                    color: #888;
+                    margin-bottom: 6px;
+                }}
+                
+                .metric-value {{
+                    font-size: 15px;
+                    font-weight: 600;
+                    color: #333;
+                }}
+                
+                .metric-value.comp {{ color: #f57f17; }}
+                
+                /* Mobile Layout */
+                @media (max-width: 768px) {{
+                    .card {{
+                        flex-direction: column;
+                        align-items: flex-start;
+                        gap: 16px;
+                        padding: 16px;
+                    }}
+                    .metrics-grid {{
+                        width: 100%;
+                        justify-content: space-between;
+                        gap: 8px;
+                    }}
+                    .metric {{
+                        min-width: auto;
+                    }}
+                    .metric-label {{
+                        font-size: 10px;
+                    }}
+                    .metric-value {{
+                        font-size: 13px;
+                    }}
+                    .copy-btn {{ opacity: 1; }}
+                }}
+            </style>
+        </head>
+        <body>
+            <div id="container"></div>
+
+            <script>
+                const data = {data_json};
+                const container = document.getElementById('container');
+                
+                // Icons
+                const COPY_ICON = `<svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
+                const CHECK_ICON = `<svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>`;
+
+                data.forEach((item, index) => {{
+                    const card = document.createElement('div');
+                    card.className = 'card';
+                    
+                    // Left Section
+                    const leftSection = document.createElement('div');
+                    leftSection.className = 'left-section';
+                    
+                    const metaRow = document.createElement('div');
+                    metaRow.className = 'meta-row';
+                    metaRow.innerHTML = `
+                        <span class="badge" style="background-color: ${{item.badge.bg}}; color: ${{item.badge.color}}">${{item.badge.text}}</span>
+                        <span class="date">${{item.date}}</span>
+                    `;
+                    
+                    const keywordRow = document.createElement('div');
+                    keywordRow.className = 'keyword-row';
+                    keywordRow.title = "클릭하여 복사";
+                    keywordRow.onclick = () => copyText(item.keyword, index);
+                    
+                    keywordRow.innerHTML = `
+                        <span class="keyword">${{item.keyword}}</span>
+                        <button id="btn-${{index}}" class="copy-btn" title="복사">${{COPY_ICON}}</button>
+                    `;
+                    
+                    leftSection.appendChild(metaRow);
+                    leftSection.appendChild(keywordRow);
+                    
+                    // Right Section
+                    const metricsGrid = document.createElement('div');
+                    metricsGrid.className = 'metrics-grid';
+                    metricsGrid.innerHTML = `
+                        <div class="metric"><span class="metric-label">PC</span><span class="metric-value" style="color:#666">${{item.metrics.pc}}</span></div>
+                        <div class="metric"><span class="metric-label">모바일</span><span class="metric-value" style="color:#666">${{item.metrics.mobile}}</span></div>
+                        <div class="metric"><span class="metric-label">월간 조회</span><span class="metric-value">${{item.metrics.total}}</span></div>
+                        <div class="metric"><span class="metric-label">월간 발행</span><span class="metric-value">${{item.metrics.docs}}</span></div>
+                        <div class="metric"><span class="metric-label">경쟁률</span><span class="metric-value comp">${{item.metrics.comp}}</span></div>
+                    `;
+                    
+                    card.appendChild(leftSection);
+                    card.appendChild(metricsGrid);
+                    container.appendChild(card);
+                }});
+
+                function copyText(text, index) {{
+                    const btn = document.getElementById(`btn-${{index}}`);
+                    
+                    // Fallback Copy Logic
+                    const textArea = document.createElement("textarea");
+                    textArea.value = text;
+                    textArea.style.position = "fixed"; 
+                    textArea.style.left = "-9999px";
+                    document.body.appendChild(textArea);
+                    textArea.focus();
+                    textArea.select();
+                    
+                    try {{
+                        const successful = document.execCommand('copy');
+                        if (successful) showSuccess(btn);
+                        else showFail(text);
+                    }} catch (err) {{
+                        showFail(text);
+                    }}
+                    document.body.removeChild(textArea);
+                }}
+
+                function showSuccess(btn) {{
+                    // Store original icon if needed, or just hardcode swap
+                    btn.innerHTML = CHECK_ICON;
+                    btn.classList.add('success');
+                    
+                    setTimeout(() => {{
+                        btn.innerHTML = COPY_ICON;
+                        btn.classList.remove('success');
+                    }}, 2000);
+                }}
+                
+                function showFail(text) {{
+                    alert('복사 실패. 브라우저 보안 설정 확인 필요.');
+                }}
+            </script>
+        </body>
+        </html>
+        """
+        
+        # Render the Unified Component
+        # Height Calculation: Reduced height per card due to thinner layout
+        # Approx 100px per card + padding
+        total_height = len(component_data) * 110 + 50
+        components.html(component_html, height=total_height, scrolling=False)
             
         # Pagination Buttons
         col_prev, col_page, col_next = st.columns([1, 2, 1])
