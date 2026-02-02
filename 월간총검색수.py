@@ -325,8 +325,8 @@ async def main(initial_keyword=None, target_count=None):
                         # created_at은 DB에서 자동 생성
                     })
                 
-                # Insert 실행
-                response = supabase.table("keywords").insert(db_data).execute()
+                # Upsert 실행 (keyword 기준 중복 시 업데이트)
+                response = supabase.table("keywords").upsert(db_data, on_conflict="keyword").execute()
                 print(f" - {i + len(batch)}/{len(final_results)} 저장 완료")
                 
             print(f"모든 데이터가 Supabase 'keywords' 테이블에 저장되었습니다.")
