@@ -104,6 +104,11 @@ async def get_blog_document_count(session, keyword, semaphore):
                         return json_data.get('total', 0)
                     elif response.status == 429:
                         # Rate Limit 걸림 -> 대기 후 재시도
+                        text = await response.text()
+                        if "Query limit exceeded" in text or "010" in text:
+                            print(f"[Fatal] Daily Quota Exceeded: {text}")
+                            return -2 # Special code for Quota Exceeded
+
                         wait_time = base_delay * (2 ** attempt) # Exponential Backoff
                         print(f"Rate Limit(429) 발생: '{keyword}' - {wait_time}초 대기 후 재시도 ({attempt+1}/{max_retries})")
                         await asyncio.sleep(wait_time)
@@ -151,6 +156,10 @@ async def process_keyword_item(session, item, collected_keywords, final_results,
     doc_count = await get_blog_document_count(session, rel_keyword, blog_semaphore)
     
     # 데이터 유효성 검사 (0건 또는 에러 방지)
+    # 0. 쿼리 한도 초과 시 즉시 중단
+    if doc_count == -2:
+        raise Exception("Daily Quota Exceeded")
+
     # 1. 검색량이 0인 경우 (API에서 "< 10" 등으로 반환된 경우 포함) 수집 제외
     if total_val == 0:
         return
@@ -268,7 +277,22 @@ async def main(initial_keyword=None, target_count=None):
                 
                 # 현재 배치의 모든 Task가 완료될 때까지 대기
                 if tasks:
-                    await asyncio.gather(*tasks)
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
+                    
+                    # 예외 체크 (Quota Exceeded 등)
+                    stop_collection = False
+                    for res in results:
+                        if isinstance(res, Exception):
+                            if "Daily Quota Exceeded" in str(res):
+                                print("\n[Stop] 일일 쿼리 한도 초과로 수집을 조기 종료합니다.")
+                                stop_collection = True
+                                break
+                            # 다른 예외는 무시하거나 로그
+                            # print(f"Task Exception: {res}")
+                    
+                    if stop_collection:
+                        queue.clear() # 큐를 비워 루프 종료
+                        break
                     
             else:
                 pass
