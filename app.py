@@ -301,6 +301,11 @@ def fetch_data(supabase, page=1, page_size=50, search_query="", sort_options=Non
         # 검색어 필터
         if search_query:
             query = query.ilike("keyword", f"%{search_query}%")
+
+        # 제외 키워드 필터링
+        excluded_keywords = ["러브호텔"]
+        for keyword in excluded_keywords:
+            query = query.filter("keyword", "not.ilike", f"%{keyword}%")
             
         # 정렬 적용 (DB 레벨)
         if sort_options:
