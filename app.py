@@ -336,6 +336,35 @@ def main():
         
     def reset_page():
         st.session_state.current_page = 1
+        st.session_state.scroll_to_top = True
+
+    # Scroll to top logic
+    if 'scroll_to_top' not in st.session_state:
+        st.session_state.scroll_to_top = False
+
+    if st.session_state.scroll_to_top:
+        components.html(
+            """
+            <script>
+                // 1. Scroll main container to top
+                try {
+                    var main = window.parent.document.querySelector(".main");
+                    if (main) { main.scrollTop = 0; }
+                } catch(e) {}
+                
+                // 2. Scroll body to top (fallback)
+                window.scrollTo(0, 0);
+                
+                // 3. Special handling for Streamlit's iframe structure
+                try {
+                    window.parent.window.scrollTo(0,0);
+                } catch(e) {}
+            </script>
+            """, 
+            height=0, 
+            width=0
+        )
+        st.session_state.scroll_to_top = False
     
     # Header
     st.markdown(textwrap.dedent("""
@@ -766,12 +795,14 @@ def main():
             if st.session_state.current_page > 1:
                 if st.button("⬅️ 이전 페이지", use_container_width=True):
                     st.session_state.current_page -= 1
+                    st.session_state.scroll_to_top = True
                     st.rerun()
         
         with col_next:
             if st.session_state.current_page < total_pages:
                 if st.button("다음 페이지 ➡️", use_container_width=True):
                     st.session_state.current_page += 1
+                    st.session_state.scroll_to_top = True
                     st.rerun()
             
     else:
